@@ -1253,12 +1253,12 @@ class Calendar(DAVObject):
     ) -> "Event":
         """
         Get one event from the calendar.
-
+    
         Parameters:
          * uid: the event uid
          * comp_class: filter by component type (Event, Todo, Journal)
          * comp_filter: for backward compatibility
-
+    
         Returns:
          * Event() or None
         """
@@ -1278,54 +1278,97 @@ class Calendar(DAVObject):
                 comp_class = Event
             else:
                 raise error.ConsistencyError("Wrong compfilter")
-
+    
         query = cdav.TextMatch(uid)
         query = cdav.PropFilter("UID") + query
-
+    
         root, comp_class = self.build_search_xml_query(
             comp_class=comp_class, filters=[query]
         )
-
+    
         try:
             items_found: List[Event] = self.search(root)
             if not items_found:
                 raise error.NotFoundError("%s not found on server" % uid)
-        except Exception as err:
-            if comp_filter is not None:
-                raise
-            logging.warning(
-                "Error %s from server when doing an object_by_uid(%s).  search without compfilter set is not compatible with all server implementations, trying event_by_uid + todo_by_uid + journal_by_uid instead"
-                % (str(err), uid)
-            )
-            items_found = []
-            for compfilter in ("VTODO", "VEVENT", "VJOURNAL"):
+        except error.HTTPSStatusError as err:
+            if "400" in str(err) and "calendar.mail.ru" in str(self.url):
+                logging.warning(
+                    "calendar.mail.ru returned 400 Bad Request for UID %s. Retrying with VEVENT filter." % uid
+                )
+                # Попробуем запрос с VEVENT
                 try:
-                    items_found.append(
-                        self.object_by_uid(uid, cdav.CompFilter(compfilter))
+                    items_found = self.search(
+                        self.build_search_xml_query(
+                            comp_class=Event, filters=[query]
+                        )[0]
                     )
-                except error.NotFoundError:
-                    pass
-            if len(items_found) >= 1:
-                if len(items_found) > 1:
+                    if items_found:
+                        logging.info("Found object with VEVENT filter for UID %s" % uid)
+                        # Проверяем UID, как в оригинальном коде
+                        items_found2 = []
+                        for item in items_found:
+                            if item.icalendar_component and item.icalendar_component.get("UID", None) == uid:
+                                items_found2.append(item)
+                        if not items_found2:
+                            raise error.NotFoundError("%s not found on server with VEVENT filter" % uid)
+                        error.assert_(len(items_found2) == 1)
+                        return items_found2[0]
+                    # Если ничего не найдено, пробуем VTODO и VJOURNAL
+                    for compfilter in ("VTODO", "VJOURNAL"):
+                        try:
+                            items_found = self.search(
+                                self.build_search_xml_query(
+                                    comp_class=Todo if compfilter == "VTODO" else Journal,
+                                    filters=[query]
+                                )[0]
+                            )
+                            if items_found:
+                                logging.info("Found object with %s filter for UID %s" % (compfilter, uid))
+                                items_found2 = []
+                                for item in items_found:
+                                    if item.icalendar_component and item.icalendar_component.get("UID", None) == uid:
+                                        items_found2.append(item)
+                                if items_found2:
+                                    error.assert_(len(items_found2) == 1)
+                                    return items_found2[0]
+                        except error.NotFoundError:
+                            pass
+                    raise error.NotFoundError("%s not found on server after retrying with VEVENT, VTODO, and VJOURNAL filters" % uid)
+                except Exception as retry_err:
                     logging.error(
-                        "multiple items found with same UID.  Returning the first one"
+                        "Failed to fetch object with UID %s after retrying with component filters: %s" % (uid, str(retry_err)),
+                        exc_info=True
                     )
-                return items_found[0]
-
-        # Ref Lucas Verney, we've actually done a substring search, if the
-        # uid given in the query is short (i.e. just "0") we're likely to
-        # get false positives back from the server, we need to do an extra
-        # check that the uid is correct
+                    raise
+            else:
+                # Существующая резервная логика для других серверов (например, DAViCal)
+                if comp_filter is not None:
+                    raise
+                logging.warning(
+                    "Error %s from server when doing an object_by_uid(%s).  Search without compfilter set is not compatible with all server implementations, trying event_by_uid + todo_by_uid + journal_by_uid instead"
+                    % (str(err), uid)
+                )
+                items_found = []
+                for compfilter in ("VTODO", "VEVENT", "VJOURNAL"):
+                    try:
+                        items_found.append(
+                            self.object_by_uid(uid, cdav.CompFilter(compfilter))
+                        )
+                    except error.NotFoundError:
+                        pass
+                if len(items_found) >= 1:
+                    if len(items_found) > 1:
+                        logging.error(
+                            "multiple items found with same UID.  Returning the first one"
+                        )
+                    return items_found[0]
+                raise error.NotFoundError("%s not found on server" % uid)
+    
+        # Проверка UID, как в оригинальном коде
         items_found2 = []
         for item in items_found:
-            ## In v0.10.0 we used regexps here - it's probably more optimized,
-            ## but at one point it broke due to an extra CR in the data.
-            ## Usage of the icalendar library increases readability and
-            ## reliability
-            if item.icalendar_component:
-                item_uid = item.icalendar_component.get("UID", None)
-                if item_uid and item_uid == uid:
-                    items_found2.append(item)
+            if item.icalendar_component and item.icalendar_component.get("UID", None) == uid:
+                items_found2.append(item)
         if not items_found2:
             raise error.NotFoundError("%s not found on server" % uid)
         error.assert_(len(items_found2) == 1)
