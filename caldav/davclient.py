@@ -545,6 +545,12 @@ class DAVClient:
         log.debug("self.url: " + str(url))
 
         self._principal = None
+        
+        # Set up compatibility hints based on server URL
+        self.incompatibilities = set()
+        if 'calendar.mail.ru' in str(self.url):
+            from .compatibility_hints import calendar_mail_ru
+            self.incompatibilities.update(calendar_mail_ru)
 
     def __enter__(self) -> Self:
         ## Used for tests, to set up a temporarily test server

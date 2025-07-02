@@ -231,14 +231,22 @@ class Principal(DAVObject):
                 raise ValueError("Unexpected value None for self.client")
 
             self.url = self.client.url
-            cup = self.get_property(dav.CurrentUserPrincipal())
+            
+            # Check if server supports current-user-principal before making the PROPFIND request
+            if hasattr(self.client, 'incompatibilities') and 'no_current-user-principal' in self.client.incompatibilities:
+                log.warning("calendar server does not support current-user-principal property")
+                log.warning("assuming %s is the principal URL" % self.client.url)
+                cup = None
+            else:
+                cup = self.get_property(dav.CurrentUserPrincipal())
 
             if cup is None:
-                log.warning("calendar server lacking a feature:")
-                log.warning("current-user-principal property not found")
-                log.warning("assuming %s is the principal URL" % self.client.url)
-
-            self.url = self.client.url.join(URL.objectify(cup))
+                if not (hasattr(self.client, 'incompatibilities') and 'no_current-user-principal' in self.client.incompatibilities):
+                    log.warning("calendar server lacking a feature:")
+                    log.warning("current-user-principal property not found")
+                    log.warning("assuming %s is the principal URL" % self.client.url)
+            else:
+                self.url = self.client.url.join(URL.objectify(cup))
 
     def make_calendar(
         self,
@@ -914,7 +922,7 @@ class Calendar(DAVObject):
                 ## events, tasks and journals.
                 ## TODO: we need server compatibility hints!
                 ## https://github.com/python-caldav/caldav/issues/402
-                if not comp_class and not "400" in err.reason:
+                if not comp_class and "400" in err.reason:
                     return self.search(
                         event=True,
                         include_completed=include_completed,

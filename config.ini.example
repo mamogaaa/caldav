@@ -1,0 +1,4 @@
+[caldav]
+url = https://your-caldav-server.com/caldav/
+username = your_username@example.com
+password = your_password_here
