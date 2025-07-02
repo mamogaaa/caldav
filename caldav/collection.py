@@ -914,7 +914,7 @@ class Calendar(DAVObject):
                 ## events, tasks and journals.
                 ## TODO: we need server compatibility hints!
                 ## https://github.com/python-caldav/caldav/issues/402
-                if not comp_class and not "400" in err.reason:
+                if not comp_class and "400" in err.reason:
                     return self.search(
                         event=True,
                         include_completed=include_completed,
@@ -1327,10 +1327,17 @@ class Calendar(DAVObject):
         except Exception as err:
             if comp_filter is not None:
                 raise
-            logging.warning(
-                "Error %s from server when doing an object_by_uid(%s).  search without compfilter set is not compatible with all server implementations, trying event_by_uid + todo_by_uid + journal_by_uid instead"
-                % (str(err), uid)
-            )
+            # Handle both general exceptions (DAViCal) and 400 Bad Request errors (calendar.mail.ru)
+            if isinstance(err, error.ReportError) and "400" in str(err):
+                logging.warning(
+                    "400 Bad Request from server when doing an object_by_uid(%s) without compfilter. Server requires component type specification, trying event_by_uid + todo_by_uid + journal_by_uid instead"
+                    % uid
+                )
+            else:
+                logging.warning(
+                    "Error %s from server when doing an object_by_uid(%s).  search without compfilter set is not compatible with all server implementations, trying event_by_uid + todo_by_uid + journal_by_uid instead"
+                    % (str(err), uid)
+                )
             items_found = []
             for compfilter in ("VTODO", "VEVENT", "VJOURNAL"):
                 try:

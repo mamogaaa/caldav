@@ -37,7 +37,19 @@ caldav_servers = [
         ## and rig down the calendar server
         #setup = lambda self: ...
         #teardown = lambda self: ...
-  }
+  },
+  
+  ## Example configuration for calendar.mail.ru
+  ## This server has several known limitations but can be useful for testing
+  ## compatibility with servers that require component type specification
+  #{
+  #    'name': 'CalendarMailRu',
+  #    'enable': False,  # Set to True to enable testing
+  #    'url': 'https://calendar.mail.ru/caldav/',
+  #    'username': 'your_username@mail.ru',
+  #    'password': 'your_password',
+  #    'incompatibilities': compatibility_hints.calendar_mail_ru,
+  #}
 ]
 
 
