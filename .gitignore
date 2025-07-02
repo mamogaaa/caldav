@@ -28,3 +28,5 @@ tests/conf_private.py
 .eggs
 .venv
 caldav/_version.py
+/config.mail.ini
+/config.icloud.ini
